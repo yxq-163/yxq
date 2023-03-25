@@ -1,0 +1,35 @@
+variables:
+  #docker服务启动参数
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_DRIVER: overlay2 
+  DOCKER_TLS_CERTDIR: ""
+  #下面流水线需要用到的变量
+  HARBOR_NAMESPACE: 'library'
+  BRANCH_NAME: master
+  APP_NAME: 'vue-ci-sample'
+  BUILD_NUMBER: $CI_PIPELINE_ID
+
+
+docker-build-and-deploy-k8s:
+  stage: deploy
+  image: docker:20.10.12
+  services:
+    - name: docker:20.10.12-dind
+      command: ["--insecure-registry=10.20.91.100"]
+
+
+  script:
+    - echo "This job building  something, $HARBOR_USER, $HARBOR_PASSWORD , $HARBOR_URL"
+    - echo "$HARBOR_PASSWORD" | docker login $HARBOR_URL -u "$HARBOR_USER" --password-stdin
+    - docker build -f Dockerfile -t $HARBOR_URL/$HARBOR_NAMESPACE/$APP_NAME:SNAPSHOT-$BRANCH_NAME-$BUILD_NUMBER .
+    - docker push  $HARBOR_URL/$HARBOR_NAMESPACE/$APP_NAME:SNAPSHOT-$BRANCH_NAME-$BUILD_NUMBER
+    - apk add --no-cache gettext #在apline操作系统中，安装 envsubst 命令
+
+    - envsubst < deploy/prod/devops-svc.yaml | kubectl apply -f -  #再创建 service deployment pod
+    - envsubst < deploy/prod/devops.yaml | kubectl apply -f -
+
+  rules:
+    - allow_failure: true
+    - if: $CI_COMMIT_BRANCH_NAME == "master"
+      when: always
+    - when: never
